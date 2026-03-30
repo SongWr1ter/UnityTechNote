@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace StudyMat.ASTAR
@@ -32,6 +33,8 @@ namespace StudyMat.ASTAR
             public int y;
             public Vector3 center;
             public bool isBlocked;
+            public bool isDrawedByManual = false;
+            public Color manualColor = Color.white;
 
             public GridCell(int x, int y, Vector3 center)
             {
@@ -65,6 +68,7 @@ namespace StudyMat.ASTAR
         public GridCell[,] Cells => _cells;
         [SerializeField,Range(0,1f)]
         private float physics2DDetectPrecision = 0.9f;
+        private PathFinderShower pathFinderShower;
 
         public void BuildGridAndScan()
         {
@@ -211,17 +215,24 @@ namespace StudyMat.ASTAR
                 for (int y = 0; y < rows; y++)
                 {
                     GridCell cell = _cells[x, y];
-                    Gizmos.color = cell.isBlocked ? Color.red : Color.grey;
-                    Vector3 size = cell.isBlocked ? Vector3.one * blockedSize : Vector3.one * cellSize * 0.8f;
+                    if (cell.isDrawedByManual)
+                    {
+                        Gizmos.color = cell.manualColor;
+                    }
+                    else
+                    {
+                        Gizmos.color = cell.isBlocked ? Color.red : Color.grey;
+                    }
+                    Vector3 size = cell.isBlocked && !cell.isDrawedByManual ? Vector3.one * blockedSize : Vector3.one * cellSize * 0.8f;
                     Gizmos.DrawCube(cell.center, size);
-                    // 绘制检测射线
-                    Gizmos.color = cell.isBlocked ? Color.red : Color.green;
-                    Vector3 rayDirection = GetRayDirection();
-                    Vector3 rayStart = cell.center - rayDirection * rayStartOffset;
-                    Vector3 rayEnd = rayStart + rayDirection * (rayDistance + rayStartOffset);
-                    Gizmos.DrawLine(rayStart, rayEnd);
                     if (drawDetectArrow)
                     {
+                        // 绘制检测射线
+                        Gizmos.color = cell.isBlocked ? Color.red : Color.green;
+                        Vector3 rayDirection = GetRayDirection();
+                        Vector3 rayStart = cell.center - rayDirection * rayStartOffset;
+                        Vector3 rayEnd = rayStart + rayDirection * (rayDistance + rayStartOffset);
+                        Gizmos.DrawLine(rayStart, rayEnd);
                         if (physicsDetectionMode == PhysicsDetectionMode.Physics3D)
                         {
                             Vector3 arrow = rayEnd - new Vector3(cellSize * 0.5f, 0f, cellSize * 0.5f);
@@ -274,5 +285,84 @@ namespace StudyMat.ASTAR
                     return Vector3.back;
             }
         }
+
+        
+        
+        private Vector3 GetMouseWorldPosition()
+        {
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            Plane plane = new Plane(Vector3.forward, Vector3.zero);
+            if (plane.Raycast(ray, out float enter))
+            {
+                return ray.GetPoint(enter);
+            }
+            return Vector3.zero;
+        }
+        
+        private GridCell GetCellByCoordinate(int x, int y)
+        {
+            if (_cells == null || x < 0 || x >= columns || y < 0 || y >= rows)
+            {
+                return null;
+            }
+            return Cells[x,y];
+        }
+        
+        private void WorldPosition2GridCoordinate(Vector3 worldPosition, out int x, out int y)
+        {
+            Vector3 localPos = worldPosition - startPosition;
+            Debug.Log(localPos);
+            x = Mathf.FloorToInt(localPos.x / cellSize);
+            y = Mathf.FloorToInt(localPos.y / cellSize);
+            Debug.Log($"x:{x},y:{y}");
+            x = Mathf.Clamp(x, 0, columns - 1);
+            y = Mathf.Clamp(y, 0, rows - 1);
+        }
+        
+        private GridCell GetCellByWorldPosition(Vector3 worldPosition)
+        {
+            WorldPosition2GridCoordinate(worldPosition, out int x, out int y);
+            return GetCellByCoordinate(x, y);
+        }
+        
+        #region 外部接口
+
+        public void AddPathFinderShower()
+        {
+            BuildGridAndScan();
+            if (pathFinderShower == null)
+            {
+                pathFinderShower = gameObject.AddComponent<PathFinderShower>();
+                pathFinderShower.OnAdd(this);
+            }
+            else
+            {
+                pathFinderShower.ResetPathFinder();
+            }
+        }
+        
+        public GridCell MouseInputUpdateFunction()
+        {
+            if (Cells is null) return null;
+            GridCell cell = GetCellByWorldPosition(GetMouseWorldPosition());
+            return cell;
+        }
+        
+        public bool SetGridCellByCoordinate(int x, int y, bool isDrawedByManual = true, Color? manualColor = null)
+        {
+            GridCell cell = GetCellByCoordinate(x, y);
+            if (cell == null)
+            {
+                Debug.LogError($"坐标超出范围,x:{x},y:{y}");
+                return false;
+            }
+            cell.isDrawedByManual = isDrawedByManual;
+            if (manualColor.HasValue)
+            {
+                cell.manualColor = manualColor.Value;
+            }
+            return true;
+        }
+        #endregion
     }
 }
